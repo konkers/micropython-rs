@@ -1,0 +1,3 @@
+[submodule "micropython_src/third_party/micropython"]
+	path = micropython_src/third_party/micropython
+	url = https://github.com/micropython/micropython

@@ -1,0 +1,16 @@
+//
+// Static QStrs
+//
+QDEF0(MP_QSTRnull, 0, 0, "")
+{{#each static_qstrs}}
+// Source: {{source}}
+QDEF{{pool}}({{{ident}}}, {{hash}}, {{val_len}}, "{{{val}}}")
+{{/each}}
+
+//
+// "unordered" QStrs
+//
+{{#each unsorted_qstrs}}
+// Source: {{source}}
+QDEF{{pool}}({{{ident}}}, {{hash}}, {{val_len}}, "{{{val}}}")
+{{/each}}
