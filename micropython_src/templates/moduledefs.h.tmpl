@@ -1,0 +1,16 @@
+{{#each modules}}
+// {{source}}
+extern const struct _mp_obj_module_t {{symbol}};
+#undef MODULE_DEF_{{upper_name}}
+#define MODULE_DEF_{{upper_name}} { MP_ROM_QSTR({{qstr_ident}}), MP_ROM_PTR(&{{symbol}}) },
+
+{{/each}}
+
+#define MICROPY_REGISTERED_MODULES \
+{{#each modules}}
+MODULE_DEF_{{upper_name}} \
+{{/each}}
+// MICROPY_REGISTERED_MODULES
+
+#define MICROPY_REGISTERED_EXTENSIBLE_MODULES \
+// MICROPY_REGISTERED_EXTENSIBLE_MODULES
