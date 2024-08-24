@@ -1,4 +1,6 @@
-use std::{marker::PhantomData, pin::Pin};
+#![no_std]
+
+use core::{marker::PhantomData, pin::Pin};
 
 use micropython_sys as mp_sys;
 

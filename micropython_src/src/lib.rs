@@ -333,6 +333,7 @@ impl Build {
             .collect();
 
         let bindings = bindgen::Builder::default()
+            .use_core()
             .clang_args(clang_args)
             .headers(header_files)
             .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
