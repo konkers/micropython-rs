@@ -1,0 +1,7 @@
+[package]
+name = "micropython"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+micropython_sys = { path = "../micropython_sys" }

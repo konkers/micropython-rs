@@ -7,7 +7,7 @@ use serde::Serialize;
 
 use super::{BytesIn, Config, Data};
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct QStr {
     pub pool: u8,
     pub val: String,
@@ -18,7 +18,7 @@ pub struct QStr {
 }
 
 impl QStr {
-    fn new(config: &Config, data: &Data, val: &str, pool: u8, source: String) -> Self {
+    pub fn new(config: &Config, data: &Data, val: &str, pool: u8, source: String) -> Self {
         Self {
             pool,
             val: Self::escape_string(val),

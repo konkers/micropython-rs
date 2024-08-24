@@ -13,6 +13,7 @@ exclude = [
 
 [dependencies]
 anyhow = "1.0.86"
+bindgen = "0.70.1"
 cc = "1.0.54"
 handlebars = "6.0.0"
 json5 = "0.4.1"

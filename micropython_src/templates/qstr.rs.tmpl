@@ -1,0 +1,4 @@
+pub const MP_QSTRnull: u32 = 0;
+{{#each all_qstrs}}
+pub const {{{ident}}}: u32 = {{@index}} + 1;
+{{/each}}

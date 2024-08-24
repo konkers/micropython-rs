@@ -1,12 +1,9 @@
 [package]
-name = "testcrate"
+name = "micropython_sys"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-libc = "0.2.158"
-micropython_sys = { path = "../micropython_sys" }
-micropython = { path = "../micropython" }
 
 [build-dependencies]
 micropython_src = { path = "../micropython_src" }

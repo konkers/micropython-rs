@@ -33,6 +33,7 @@ impl Data {
 
         let unsorted_qstrs = json5::from_str(include_str!("../data/unsorted_qstrs.json5"))
             .unwrap_or_else(|e| panic!("can't parse unsorted_qstrs.json5: {e}"));
+
         Self {
             qstr_ident_translations,
             static_qstrs,
@@ -66,6 +67,28 @@ impl Default for BytesIn {
 pub struct Config {
     pub bytes_in_hash: BytesIn,
     pub bytes_in_string: BytesIn,
+    pub extra_qstrs: Vec<String>,
+}
+
+impl Config {
+    pub fn qstr(mut self, qstr: &str) -> Self {
+        self.extra_qstrs.push(qstr.to_string());
+        self
+    }
+    fn is_header_used(&self, path: &Path) -> bool {
+        for suffix in [
+            "py/dynruntime.h",
+            "py/grammar.h",
+            "py/qstrdefs.h",
+            "py/vmentrytable.h",
+        ] {
+            if path.ends_with(suffix) {
+                return false;
+            }
+        }
+
+        true
+    }
 }
 
 pub struct Build {
@@ -73,43 +96,19 @@ pub struct Build {
     include_dir: PathBuf,
     source_dir: PathBuf,
     source_files: Vec<PathBuf>,
+    header_files: Vec<PathBuf>,
     data: Data,
     config: Config,
-    // target: String,
-    //host: String,
 }
 
 #[derive(Serialize)]
 struct ExtractedData {
     pub static_qstrs: Vec<QStr>,
     pub unsorted_qstrs: Vec<QStr>,
+    pub all_qstrs: Vec<QStr>,
     pub modules: Vec<Module>,
     pub extensible_modules: Vec<Module>,
     pub module_delegations: Vec<Module>,
-}
-
-fn add_src_dir<P: AsRef<Path>>(
-    source_files: &mut Vec<PathBuf>,
-    header_files: &mut Vec<PathBuf>,
-    dir: P,
-) {
-    let dir = dir.as_ref();
-    for entry in dir.read_dir().expect("directory exists") {
-        let entry_path = entry.expect("entry is valid").path();
-        let Some(extension) = entry_path.extension() else {
-            continue;
-        };
-
-        if extension == "h" {
-            header_files.push(entry_path.clone());
-            //           println!("cargo::rerun-if-changed={slash_path}");
-        }
-        if extension == "c" {
-            source_files.push(entry_path.clone());
-            //println!("cargo::rerun-if-changed={slash_path}");
-            //           builder.file(&*slash_path);
-        }
-    }
 }
 
 impl Build {
@@ -126,27 +125,62 @@ impl Build {
         let mut source_files = Vec::new();
         let mut header_files = Vec::new();
 
-        add_src_dir(&mut source_files, &mut header_files, source_dir.join("py"));
-
+        Self::add_src_dir(
+            &config,
+            &mut source_files,
+            &mut header_files,
+            source_dir.join("py"),
+        );
         source_files.push(source_dir.join("shared/runtime/gchelper_generic.c"));
+        header_files.push(source_dir.join("shared/runtime/gchelper.h"));
 
         Build {
             lib_dir,
             include_dir,
             source_dir,
             source_files,
+            header_files,
             config,
             data: Data::new(),
         }
+    }
+
+    fn add_src_dir<P: AsRef<Path>>(
+        config: &Config,
+        source_files: &mut Vec<PathBuf>,
+        header_files: &mut Vec<PathBuf>,
+        dir: P,
+    ) {
+        let dir = dir.as_ref();
+        for entry in dir.read_dir().expect("directory exists") {
+            let entry_path = entry.expect("entry is valid").path();
+            let Some(extension) = entry_path.extension() else {
+                continue;
+            };
+
+            if extension == "h" && config.is_header_used(&entry_path) {
+                header_files.push(entry_path.clone());
+            }
+            if extension == "c" {
+                source_files.push(entry_path.clone());
+                //println!("cargo::rerun-if-changed={slash_path}");
+                //           builder.file(&*slash_path);
+            }
+        }
+    }
+    fn include_dirs<Callback: FnMut(&PathBuf)>(&self, mut callback: Callback) {
+        callback(&PathBuf::from("."));
+        callback(&self.include_dir);
+        callback(&self.source_dir);
     }
 
     fn builder(&self) -> cc::Build {
         let mut builder = cc::Build::new();
         builder.warnings(false);
         builder.flag("-w"); // Disable warnings
-        builder.include(".");
-        builder.include(&self.include_dir);
-        builder.include(&self.source_dir);
+        self.include_dirs(|path| {
+            builder.include(path);
+        });
 
         builder
     }
@@ -168,19 +202,37 @@ impl Build {
             }
         }
 
-        let qstrs = qstr_extractor.finish();
+        let mut qstrs = qstr_extractor.finish();
         let modules = module_extractor.finish();
+
+        for qstr in &self.config.extra_qstrs {
+            qstrs.unsorted_qstrs.push(QStr::new(
+                &self.config,
+                &self.data,
+                qstr,
+                1,
+                "Rust".to_string(),
+            ));
+        }
+
+        let all_qstrs = qstrs
+            .static_qstrs
+            .iter()
+            .chain(qstrs.unsorted_qstrs.iter())
+            .cloned()
+            .collect();
 
         Ok(ExtractedData {
             static_qstrs: qstrs.static_qstrs,
             unsorted_qstrs: qstrs.unsorted_qstrs,
+            all_qstrs,
             modules: modules.modules,
             extensible_modules: modules.extensible_modules,
             module_delegations: modules.module_delegations,
         })
     }
 
-    pub fn build(&mut self) -> Result<()> {
+    fn generate_headers(&mut self) -> Result<ExtractedData> {
         if self.lib_dir.exists() {
             fs::remove_dir_all(&self.lib_dir)?;
         }
@@ -241,6 +293,12 @@ impl Build {
             file.write_all(reg.render_template(template, &data)?.as_bytes())?
         }
 
+        Ok(data)
+    }
+
+    pub fn build(&mut self) -> Result<()> {
+        let data = self.generate_headers()?;
+
         let mut builder = self.builder();
         for source in &self.source_files {
             builder.file(source);
@@ -248,6 +306,41 @@ impl Build {
 
         let lib_name = "micropython";
         builder.out_dir(&self.lib_dir).compile(lib_name);
+
+        // Generate project specific qstr rust bindings.
+        let reg = Handlebars::new();
+        include_str!("../templates/qstr.rs.tmpl");
+        let out_path = PathBuf::from(env::var("OUT_DIR").unwrap());
+        let mut file = File::create(out_path.join("qstr.rs"))?;
+        file.write_all(
+            reg.render_template(include_str!("../templates/qstr.rs.tmpl"), &data)?
+                .as_bytes(),
+        )?;
+
+        Ok(())
+    }
+
+    pub fn bindgen(&mut self) -> Result<()> {
+        self.generate_headers()?;
+
+        let mut clang_args = Vec::new();
+        self.include_dirs(|path| clang_args.push(format!("-I{}", path.to_string_lossy())));
+
+        let header_files: Vec<String> = self
+            .header_files
+            .iter()
+            .map(|path| path.to_string_lossy().to_string())
+            .collect();
+
+        let bindings = bindgen::Builder::default()
+            .clang_args(clang_args)
+            .headers(header_files)
+            .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
+            // Finish the builder and generate the bindings.
+            .generate()?;
+
+        let out_path = PathBuf::from(env::var("OUT_DIR").unwrap());
+        bindings.write_to_file(out_path.join("micropython-bindings.rs"))?;
 
         Ok(())
     }
